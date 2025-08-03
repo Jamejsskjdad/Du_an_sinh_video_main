@@ -1,6 +1,9 @@
 import os, sys
 import gradio as gr
 from src.gradio_demo import SadTalker  
+from gtts import gTTS
+from datetime import datetime
+import tempfile
 
 try:
     import webui  # in webui
@@ -19,6 +22,29 @@ def ref_video_fn(path_of_ref_video):
         return gr.update(value=True)
     else:
         return gr.update(value=False)
+
+def convert_text_to_audio(text, language='vi'):
+    """
+    Convert text to audio using gTTS
+    Returns the path to the generated audio file and status message
+    """
+    try:
+        if not text or text.strip() == "":
+            return None, "Vui lòng nhập nội dung văn bản!", gr.update(visible=False)
+        
+        # Create a temporary file for the audio
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+        temp_path = temp_file.name
+        temp_file.close()
+        
+        # Convert text to speech
+        tts = gTTS(text=text, lang=language, slow=False)
+        tts.save(temp_path)
+        
+        # Return the audio file path directly for Gradio Audio component
+        return temp_path, f"✅ Chuyển đổi thành công! Đã tạo file âm thanh cho văn bản: {text[:50]}{'...' if len(text) > 50 else ''}"
+    except Exception as e:
+        return None, f"❌ Lỗi khi chuyển đổi: {str(e)}"
 
 def sadtalker_demo(checkpoint_path='checkpoints', config_path='src/config', warpfn=None):
 
@@ -49,6 +75,36 @@ def sadtalker_demo(checkpoint_path='checkpoints', config_path='src/config', warp
                                 input_text = gr.Textbox(label="Generating audio from text", lines=5, placeholder="please enter some text here, we genreate the audio from text using @Coqui.ai TTS.")
                                 tts = gr.Button('Generate audio',elem_id="sadtalker_audio_generate", variant='primary')
                                 tts.click(fn=tts_talker.test, inputs=[input_text], outputs=[driven_audio])
+                        
+                        # Make Audio Section
+                        with gr.Column(variant='panel'):
+                            gr.Markdown("### 🎵 Make Audio - Chuyển văn bản thành âm thanh")
+                            audio_text_input = gr.Textbox(
+                                label="Nhập văn bản để chuyển thành âm thanh", 
+                                lines=4, 
+                                placeholder="Nhập nội dung văn bản tại đây để chuyển thành file âm thanh MP3...",
+                                elem_id="audio_text_input"
+                            )
+                            audio_language = gr.Dropdown(
+                                choices=["vi", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "pt"],
+                                value="vi",
+                                label="Ngôn ngữ",
+                                elem_id="audio_language"
+                            )
+                            convert_audio_btn = gr.Button(
+                                '🔄 Chuyển văn bản thành âm thanh', 
+                                elem_id="convert_audio_btn", 
+                                variant='primary'
+                            )
+                            audio_status = gr.Textbox(
+                                label="Trạng thái", 
+                                interactive=False,
+                                elem_id="audio_status"
+                            )
+                            generated_audio = gr.Audio(
+                                label="Âm thanh đã tạo", 
+                                elem_id="generated_audio"
+                            )
                             
             with gr.Column(variant='panel'): 
                 with gr.Tabs(elem_id="sadtalker_checkbox"):
@@ -95,6 +151,13 @@ def sadtalker_demo(checkpoint_path='checkpoints', config_path='src/config', warp
                                 ], 
                         outputs=[gen_video]
                         )
+
+        # Make Audio event handlers
+        convert_audio_btn.click(
+            fn=convert_text_to_audio,
+            inputs=[audio_text_input, audio_language],
+            outputs=[generated_audio, audio_status]
+        )
 
     return sadtalker_interface
  

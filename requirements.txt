@@ -19,3 +19,4 @@ gradio
 gfpgan
 av
 safetensors
+gTTS==2.3.2
