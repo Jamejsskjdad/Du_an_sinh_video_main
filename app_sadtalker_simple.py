@@ -6,8 +6,14 @@ from datetime import datetime
 import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
-from moviepy.editor import VideoFileClip, concatenate_videoclips, CompositeVideoClip, TextClip
+from moviepy.editor import VideoFileClip, concatenate_videoclips, CompositeVideoClip, TextClip, ImageClip
+from PIL import Image
 import re
+import json
+from pptx import Presentation
+import io
+import time
+import shutil
 
 try:
     import webui  # in webui
@@ -160,6 +166,310 @@ def extract_text_from_pptx(pptx_file):
     except Exception as e:
         return []
 
+def extract_slides_from_pptx(pptx_file):
+    """
+    Extract slides as images from PowerPoint file
+    Returns list of slide images and their text content
+    """
+    try:
+        slides_data = []
+        prs = Presentation(pptx_file.name)
+        
+        for i, slide in enumerate(prs.slides):
+            # Extract text from slide
+            slide_text = ""
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    slide_text += shape.text + " "
+            
+            # Convert slide to image (simplified approach)
+            # In a real implementation, you'd use a library like python-pptx with rendering
+            # For now, we'll create a placeholder image with text
+            slide_text = slide_text.strip()
+            if slide_text:
+                slides_data.append({
+                    'slide_number': i + 1,
+                    'text': slide_text,
+                    'image_path': None  # Will be created later
+                })
+        
+        return slides_data
+    except Exception as e:
+        print(f"Error extracting slides: {str(e)}")
+        return []
+
+def get_audio_duration(audio_path):
+    """
+    Get duration of audio file in seconds
+    """
+    try:
+        if audio_path and os.path.exists(audio_path):
+            # Use AudioFileClip instead of VideoFileClip for audio files
+            from moviepy.editor import AudioFileClip
+            audio_clip = AudioFileClip(audio_path)
+            duration = audio_clip.duration
+            audio_clip.close()
+            return duration
+        return 0
+    except Exception as e:
+        print(f"Error getting audio duration: {str(e)}")
+        return 0
+
+def create_slide_image_with_text(text, output_path, width=1920, height=1080):
+    """
+    Create a slide image with text (placeholder for actual slide rendering)
+    """
+    try:
+        # Create a white background image
+        img = Image.new('RGB', (width, height), color='white')
+        
+        # For now, we'll create a simple text image
+        # In a real implementation, you'd render the actual PowerPoint slide
+        from PIL import ImageDraw, ImageFont
+        
+        draw = ImageDraw.Draw(img)
+        
+        # Try to use a default font, fallback to basic if not available
+        try:
+            font = ImageFont.truetype("arial.ttf", 40)
+        except:
+            font = ImageFont.load_default()
+        
+        # Draw text in the center
+        text_lines = text.split('\n')
+        y_position = height // 2 - (len(text_lines) * 50) // 2
+        
+        for line in text_lines:
+            # Get text size
+            bbox = draw.textbbox((0, 0), line, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            
+            # Calculate position to center text
+            x_position = (width - text_width) // 2
+            
+            # Draw text
+            draw.text((x_position, y_position), line, fill='black', font=font)
+            y_position += text_height + 20
+        
+        # Save image
+        img.save(output_path)
+        return output_path
+    except Exception as e:
+        print(f"Error creating slide image: {str(e)}")
+        return None
+
+def create_lecture_video(sad_talker, slides_data, source_image, language, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style):
+    """
+    Create a lecture video combining slides and teacher video
+    """
+    try:
+        if not slides_data:
+            return None, "❌ Không có slide nào để xử lý!"
+        
+        # Create output directory
+        output_dir = os.path.join("results", f"lecture_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        print(f"Creating lecture video in: {output_dir}")
+        
+        # Copy source image to safe location
+        safe_image_path = os.path.join(output_dir, "source_image.png")
+        if not source_image or not os.path.exists(source_image):
+            return None, "❌ Không tìm thấy ảnh nguồn!"
+        
+        shutil.copy2(source_image, safe_image_path)
+        print(f"✅ Source image copied to safe location: {safe_image_path}")
+        
+        # Process each slide
+        slide_clips = []
+        total_duration = 0
+        temp_video_files = []  # Track temporary video files for cleanup
+        
+        for i, slide_data in enumerate(slides_data):
+            print(f"\n--- Processing slide {i+1}/{len(slides_data)} ---")
+            
+            # Verify source image exists before each slide processing
+            if not os.path.exists(safe_image_path):
+                print(f"⚠️ Source image lost, copying again...")
+                if os.path.exists(source_image):
+                    shutil.copy2(source_image, safe_image_path)
+                    print(f"✅ Source image re-copied")
+                else:
+                    print(f"❌ Original source image also lost, stopping process")
+                    break
+            
+            # Create slide image
+            slide_image_path = os.path.join(output_dir, f"slide_{i+1:02d}.png")
+            slide_image = create_slide_image_with_text(slide_data['text'], slide_image_path)
+            
+            if not slide_image:
+                print(f"❌ Failed to create slide image for slide {i+1}")
+                continue
+            
+            # Generate audio for slide text
+            audio_path = convert_text_to_audio(slide_data['text'], language)
+            if not audio_path:
+                print(f"❌ Failed to generate audio for slide {i+1}")
+                continue
+            
+            # Get audio duration
+            audio_duration = get_audio_duration(audio_path)
+            print(f"Audio duration for slide {i+1}: {audio_duration:.2f} seconds")
+            
+            # If audio duration is 0 or very short, set a minimum duration
+            if audio_duration <= 0.1:
+                audio_duration = 3.0  # Minimum 3 seconds per slide
+                print(f"⚠️ Audio duration too short, setting to minimum: {audio_duration}s")
+            
+            # Generate teacher video
+            teacher_video_path = generate_video_for_text(
+                sad_talker, safe_image_path, slide_data['text'], language, 
+                preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style
+            )
+            
+            if not teacher_video_path or not os.path.exists(teacher_video_path):
+                print(f"❌ Failed to generate teacher video for slide {i+1}")
+                # Clean up audio
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
+                continue
+            
+            # Add small delay to ensure file is fully written
+            import time
+            time.sleep(1)
+            
+            # Create slide video clip (static image for audio duration)
+            slide_clip = ImageClip(slide_image_path, duration=audio_duration)
+            
+            # Load teacher video clip with error handling
+            try:
+                teacher_clip = VideoFileClip(teacher_video_path)
+            except Exception as e:
+                print(f"❌ Error loading teacher video for slide {i+1}: {str(e)}")
+                # Clean up audio
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
+                continue
+            
+            # Resize teacher video to fit in bottom-right corner (picture-in-picture)
+            # Calculate size: 25% of slide width, maintain aspect ratio
+            slide_width, slide_height = slide_clip.size
+            teacher_width = int(slide_width * 0.25)
+            teacher_height = int(teacher_width * teacher_clip.h / teacher_clip.w)
+            
+            # Resize teacher video
+            teacher_clip = teacher_clip.resize((teacher_width, teacher_height))
+            
+            # Position teacher video in bottom-right corner
+            teacher_x = slide_width - teacher_width - 50  # 50px margin
+            teacher_y = slide_height - teacher_height - 50  # 50px margin
+            teacher_clip = teacher_clip.set_position((teacher_x, teacher_y))
+            
+            # Composite slide and teacher video
+            composite_clip = CompositeVideoClip([slide_clip, teacher_clip])
+            
+            # Add to clips list
+            slide_clips.append(composite_clip)
+            total_duration += audio_duration
+            
+            # Track video file for later cleanup
+            temp_video_files.append(teacher_video_path)
+            
+            print(f"✅ Slide {i+1} processed: {audio_duration:.2f}s")
+            
+            # Clean up temporary files with delay
+            time.sleep(0.5)  # Small delay before cleanup
+            if os.path.exists(audio_path):
+                try:
+                    os.remove(audio_path)
+                except Exception as e:
+                    print(f"⚠️ Could not remove audio file: {str(e)}")
+            
+            # Don't delete teacher video file immediately - it might still be in use
+            # We'll clean it up later in the final cleanup
+            print(f"📁 Teacher video saved for slide {i+1}: {os.path.basename(teacher_video_path)}")
+        
+        if not slide_clips:
+            return None, "❌ Không thể tạo video cho bất kỳ slide nào!"
+        
+        print(f"\n--- Creating final lecture video ---")
+        print(f"Total slides: {len(slide_clips)}")
+        print(f"Total duration: {total_duration:.2f} seconds")
+        
+        # Concatenate all slide clips
+        final_video_path = os.path.join(output_dir, "lecture_final.mp4")
+        final_video = concatenate_videoclips(slide_clips, method="compose")
+        
+        print(f"Writing final video to: {final_video_path}")
+        final_video.write_videofile(final_video_path, codec='libx264', audio_codec='aac', verbose=False, logger=None)
+        
+        # Clean up clips
+        for clip in slide_clips:
+            try:
+                clip.close()
+            except Exception as e:
+                print(f"⚠️ Could not close clip: {str(e)}")
+        try:
+            final_video.close()
+        except Exception as e:
+            print(f"⚠️ Could not close final video: {str(e)}")
+        
+        # Add delay before cleanup
+        time.sleep(1)
+        
+        # Clean up temporary slide images
+        for i in range(len(slides_data)):
+            slide_image_path = os.path.join(output_dir, f"slide_{i+1:02d}.png")
+            if os.path.exists(slide_image_path):
+                try:
+                    os.remove(slide_image_path)
+                except Exception as e:
+                    print(f"⚠️ Could not remove slide image {i+1}: {str(e)}")
+        
+        # Clean up source image copy
+        if os.path.exists(safe_image_path):
+            try:
+                os.remove(safe_image_path)
+            except Exception as e:
+                print(f"⚠️ Could not remove source image copy: {str(e)}")
+        
+        # Clean up temporary video files
+        print("🧹 Cleaning up temporary video files...")
+        for video_file in temp_video_files:
+            if os.path.exists(video_file):
+                try:
+                    os.remove(video_file)
+                    print(f"  ✅ Deleted: {os.path.basename(video_file)}")
+                except Exception as e:
+                    print(f"  ❌ Could not delete {os.path.basename(video_file)}: {str(e)}")
+        
+        # Also clean up temporary SadTalker directories
+        print("🗂️ Cleaning up temporary SadTalker directories...")
+        temp_dirs_deleted = 0
+        results_dir = "results"
+        if os.path.exists(results_dir):
+            for item in os.listdir(results_dir):
+                item_path = os.path.join(results_dir, item)
+                # Check if it's a directory with UUID-like name (temporary SadTalker dirs)
+                if os.path.isdir(item_path) and len(item) == 36 and '-' in item:
+                    try:
+                        shutil.rmtree(item_path)
+                        print(f"  ✅ Deleted temp directory: {item}")
+                        temp_dirs_deleted += 1
+                    except Exception as e:
+                        print(f"  ❌ Failed to delete temp directory {item}: {str(e)}")
+        
+        print(f"🗂️ Cleanup completed: {temp_dirs_deleted} temporary directories deleted")
+        
+        print(f"✅ Lecture video created successfully: {final_video_path}")
+        
+        return final_video_path, f"✅ Hoàn thành! Đã tạo video bài giảng với {len(slides_data)} slide, tổng thời gian: {total_duration:.1f}s"
+        
+    except Exception as e:
+        print(f"Error in create_lecture_video: {str(e)}")
+        return None, f"❌ Lỗi tạo video bài giảng: {str(e)}"
+
 def generate_video_for_text(sad_talker, source_image, text, language, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style):
     """
     Generate video for a single text using SadTalker
@@ -281,7 +591,6 @@ def process_powerpoint_to_video(sad_talker, pptx_file, source_image, language, p
             return None, "❌ Không tìm thấy ảnh nguồn!"
         
         # Copy image to safe location
-        import shutil
         shutil.copy2(source_image, safe_image_path)
         print(f"✅ Source image copied to safe location: {safe_image_path}")
         
@@ -403,7 +712,6 @@ def process_powerpoint_to_video(sad_talker, pptx_file, source_image, language, p
                     # Check if it's a directory with UUID-like name (temporary SadTalker dirs)
                     if os.path.isdir(item_path) and len(item) == 36 and '-' in item:
                         try:
-                            import shutil
                             shutil.rmtree(item_path)
                             print(f"  ✅ Deleted temp directory: {item}")
                             temp_dirs_deleted += 1
@@ -518,7 +826,7 @@ def sadtalker_demo_with_home(checkpoint_path='checkpoints', config_path='src/con
                             <li style="color: #000 !important; margin-bottom: 10px;">✨ Tạo video nói chuyện từ ảnh tĩnh</li>
                             <li style="color: #000 !important; margin-bottom: 10px;">🎵 Hỗ trợ âm thanh từ file hoặc văn bản</li>
                             <li style="color: #000 !important; margin-bottom: 10px;">📄 Import văn bản từ file (.txt, .md, .doc, .docx)</li>
-                            <li style="color: #000 !important; margin-bottom: 10px;">📊 Tạo video từ PowerPoint (mỗi slide = 1 video)</li>
+                            <li style="color: #000 !important; margin-bottom: 10px;">🎓 Tạo video bài giảng (slide + giáo viên giảng)</li>
                             <li style="color: #000 !important; margin-bottom: 10px;">🎨 Nhiều tùy chọn xử lý ảnh</li>
                             <li style="color: #000 !important; margin-bottom: 10px;">⚡ Tốc độ xử lý nhanh</li>
                             <li style="color: #000 !important; margin-bottom: 10px;">🤖 Hiệu ứng chuyển động tự nhiên</li>
@@ -537,243 +845,146 @@ def sadtalker_demo_with_home(checkpoint_path='checkpoints', config_path='src/con
                     </div>
                 </div>
                 <div class="sad-home-btn-wrap">
-                    <button class="sad-home-btn" onclick="document.querySelectorAll('.tabitem')[1].click();">🎬 Chuyển đến giao diện Sinh Video</button>
+                    <button class="sad-home-btn" onclick="document.querySelectorAll('.tabitem')[1].click();">🎓 Chuyển đến giao diện Tạo Bài Giảng</button>
                 </div>
                 """)
             
-            # --- TAB SINH VIDEO (nguyên gốc từ code bạn gửi) ---
-            with gr.TabItem("🎬 Sinh Video"):
-                gr.Markdown("<div align='center'> <h2> 😭 SadTalker: Learning Realistic 3D Motion Coefficients for Stylized Audio-Driven Single Image Talking Face Animation (CVPR 2023) </span> </h2> \
-                    <a style='font-size:18px;color: #efefef' href='https://arxiv.org/abs/2211.12194'>Arxiv</a> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
-                    <a style='font-size:18px;color: #efefef' href='https://sadtalker.github.io'>Homepage</a>  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
-                     <a style='font-size:18px;color: #efefef' href='https://github.com/Winfredy/SadTalker'> Github </div>")
 
-                with gr.Row().style(equal_height=False):
-                    with gr.Column(variant='panel'):
-                        with gr.Tabs(elem_id="sadtalker_source_image"):
-                            with gr.TabItem('Upload image'):
-                                with gr.Row():
-                                    source_image = gr.Image(label="Source image", source="upload", type="filepath", elem_id="img2img_image").style(width=512)
-
-                        with gr.Tabs(elem_id="sadtalker_driven_audio"):
-                            with gr.TabItem('Upload OR TTS'):
-                                with gr.Column(variant='panel'):
-                                    driven_audio = gr.Audio(label="Input audio", source="upload", type="filepath")
-                                if sys.platform != 'win32' and not in_webui: 
-                                    from src.utils.text2speech import TTSTalker
-                                    tts_talker = TTSTalker()
-                                    with gr.Column(variant='panel'):
-                                        input_text = gr.Textbox(label="Generating audio from text", lines=5, placeholder="please enter some text here, we genreate the audio from text using @Coqui.ai TTS.")
-                                        tts = gr.Button('Generate audio',elem_id="sadtalker_audio_generate", variant='primary')
-                                        tts.click(fn=tts_talker.test, inputs=[input_text], outputs=[driven_audio])
-                                with gr.Column(variant='panel'):
-                                    gr.Markdown("### 🎵 Make Audio - Chuyển văn bản thành âm thanh")
-                                    
-                                    # Tab cho input method
-                                    with gr.Tabs(elem_id="text_input_method"):
-                                        with gr.TabItem("📝 Nhập văn bản trực tiếp"):
-                                            audio_text_input = gr.Textbox(
-                                                label="Nhập văn bản để chuyển thành âm thanh", 
-                                                lines=4, 
-                                                placeholder="Nhập nội dung văn bản tại đây để chuyển thành file âm thanh MP3...",
-                                                elem_id="audio_text_input"
-                                            )
-                                        
-                                        with gr.TabItem("📄 Import từ file"):
-                                            text_file_input = gr.File(
-                                                label="Chọn file văn bản",
-                                                file_types=[".txt", ".md", ".doc", ".docx", ".rtf"],
-                                                elem_id="text_file_input"
-                                            )
-                                            load_file_btn = gr.Button(
-                                                '📂 Đọc nội dung file',
-                                                elem_id="load_file_btn",
-                                                variant='secondary'
-                                            )
-                                            file_status = gr.Textbox(
-                                                label="Trạng thái file",
-                                                interactive=False,
-                                                elem_id="file_status"
-                                            )
-                                    
-                                    audio_language = gr.Dropdown(
-                                        choices=["vi", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "pt"],
-                                        value="vi",
-                                        label="Ngôn ngữ",
-                                        elem_id="audio_language"
-                                    )
-                                    convert_audio_btn = gr.Button(
-                                        '🔄 Chuyển văn bản thành âm thanh', 
-                                        elem_id="convert_audio_btn", 
-                                        variant='primary'
-                                    )
-                                    generated_audio = gr.Audio(
-                                        label="Âm thanh đã tạo", 
-                                        elem_id="generated_audio"
-                                    )
-                    with gr.Column(variant='panel'): 
-                        with gr.Tabs(elem_id="sadtalker_checkbox"):
-                            with gr.TabItem('Settings'):
-                                gr.Markdown("need help? please visit our [best practice page](https://github.com/OpenTalker/SadTalker/blob/main/docs/best_practice.md) for more detials")
-                                with gr.Column(variant='panel'):
-                                    pose_style = gr.Slider(minimum=0, maximum=46, step=1, label="Pose style", value=0) # 
-                                    size_of_image = gr.Radio([256, 512], value=256, label='face model resolution', info="use 256/512 model?") # 
-                                    preprocess_type = gr.Radio(['crop', 'resize','full', 'extcrop', 'extfull'], value='crop', label='preprocess', info="How to handle input image?")
-                                    is_still_mode = gr.Checkbox(label="Still Mode (fewer head motion, works with preprocess `full`)")
-                                    batch_size = gr.Slider(label="batch size in generation", step=1, maximum=10, value=2)
-                                    enhancer = gr.Checkbox(label="GFPGAN as Face enhancer")
-                                    submit = gr.Button('Generate', elem_id="sadtalker_generate", variant='primary')
-                        with gr.Tabs(elem_id="sadtalker_genearted"):
-                                gen_video = gr.Video(label="Generated video", format="mp4").style(width=256)
-                                status_text = gr.Textbox(label="Status", value="Ready", interactive=False)
-
-                if warpfn:
-                    submit.click(
-                        fn=warpfn(sad_talker.test), 
-                        inputs=[source_image, driven_audio, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style], 
-                        outputs=[gen_video]
-                    )
-                else:
-                    submit.click(
-                        fn=sad_talker.test, 
-                        inputs=[source_image, driven_audio, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style], 
-                        outputs=[gen_video]
-                    )
-
-                # Make Audio event handlers
-                convert_audio_btn.click(
-                    fn=convert_text_to_audio,
-                    inputs=[audio_text_input, audio_language],
-                    outputs=[generated_audio]
-                )
-                
-                # File upload event handlers
-                load_file_btn.click(
-                    fn=read_text_file,
-                    inputs=[text_file_input],
-                    outputs=[audio_text_input, file_status]
-                )
             
-            # --- TAB SINH VIDEO TỪ POWERPOINT ---
-            with gr.TabItem("📊 Sinh Video từ PowerPoint"):
-                gr.Markdown("<div align='center'> <h2> 📊 SadTalker PowerPoint Video Generator </h2> \
-                    <p>Tạo video từ file PowerPoint - Mỗi slide sẽ tạo thành 1 video riêng, sau đó gộp thành 1 video hoàn chỉnh</p> </div>")
+            # --- TAB TẠO BÀI GIẢNG ---
+            with gr.TabItem("🎓 Tạo Bài Giảng"):
+                gr.Markdown("<div align='center'> <h2> 🎓 SadTalker Lecture Video Generator </h2> \
+                    <p>Tạo video bài giảng kết hợp slide PowerPoint và video giáo viên giảng bài</p> </div>")
 
                 with gr.Row().style(equal_height=False):
                     with gr.Column(variant='panel'):
                         # Source image upload
-                        gr.Markdown("### 📸 Ảnh nguồn")
-                        ppt_source_image = gr.Image(label="Ảnh khuôn mặt nguồn", source="upload", type="filepath", elem_id="ppt_source_image").style(width=512)
+                        gr.Markdown("### 👨‍🏫 Ảnh Giáo Viên")
+                        lecture_source_image = gr.Image(label="Ảnh khuôn mặt giáo viên", source="upload", type="filepath", elem_id="lecture_source_image").style(width=512)
                         
                         # PowerPoint file upload
-                        gr.Markdown("### 📊 File PowerPoint")
-                        pptx_file = gr.File(
+                        gr.Markdown("### 📊 File PowerPoint Bài Giảng")
+                        lecture_pptx_file = gr.File(
                             label="Chọn file PowerPoint (.pptx)",
                             file_types=[".pptx"],
-                            elem_id="pptx_file"
+                            elem_id="lecture_pptx_file"
                         )
                         
                         # Language selection
-                        ppt_audio_language = gr.Dropdown(
+                        lecture_audio_language = gr.Dropdown(
                             choices=["vi", "en", "zh", "ja", "ko", "fr", "de", "es", "it", "pt"],
                             value="vi",
-                            label="Ngôn ngữ",
-                            elem_id="ppt_audio_language"
+                            label="Ngôn ngữ giảng bài",
+                            elem_id="lecture_audio_language"
                         )
                         
-                        # Preview extracted text
+                        # Preview extracted slides
                         gr.Markdown("### 📝 Nội dung từ PowerPoint")
-                        ppt_extracted_text = gr.Textbox(
+                        lecture_slides_preview = gr.Textbox(
                             label="Nội dung đã trích xuất từ các slide",
                             lines=8,
                             interactive=False,
-                            elem_id="ppt_extracted_text"
+                            elem_id="lecture_slides_preview"
                         )
                         
-                        # Extract text button
-                        extract_ppt_btn = gr.Button(
+                        # Extract slides button
+                        extract_lecture_slides_btn = gr.Button(
                             '📂 Trích xuất nội dung từ PowerPoint',
-                            elem_id="extract_ppt_btn",
+                            elem_id="extract_lecture_slides_btn",
                             variant='secondary'
                         )
                         
-                        # Generate video button
-                        generate_ppt_video_btn = gr.Button(
-                            '🎬 Sinh Video từ PowerPoint',
-                            elem_id="generate_ppt_video_btn",
+                        # Generate lecture video button
+                        generate_lecture_btn = gr.Button(
+                            '🎬 Tạo Video Bài Giảng',
+                            elem_id="generate_lecture_btn",
                             variant='primary'
                         )
                         
-
-                        
                         # Status
-                        ppt_status = gr.Textbox(
+                        lecture_status = gr.Textbox(
                             label="Trạng thái xử lý",
                             interactive=False,
-                            elem_id="ppt_status"
+                            elem_id="lecture_status"
                         )
                     
                     with gr.Column(variant='panel'):
                         # Settings
-                        with gr.Tabs(elem_id="ppt_settings"):
+                        with gr.Tabs(elem_id="lecture_settings"):
                             with gr.TabItem('⚙️ Cài đặt'):
-                                gr.Markdown("Cài đặt cho việc sinh video")
+                                gr.Markdown("Cài đặt cho video bài giảng")
                                 with gr.Column(variant='panel'):
-                                    ppt_pose_style = gr.Slider(minimum=0, maximum=46, step=1, label="Pose style", value=0)
-                                    ppt_size_of_image = gr.Radio([256, 512], value=256, label='Độ phân giải ảnh', info="256 = Nhanh, 512 = Chất lượng cao nhưng chậm")
-                                    ppt_preprocess_type = gr.Radio(['crop', 'resize','full', 'extcrop', 'extfull'], value='crop', label='Xử lý ảnh', info="crop = Nhanh nhất")
-                                    ppt_is_still_mode = gr.Checkbox(label="Still Mode (chậm hơn, ít chuyển động đầu)")
-                                    ppt_batch_size = gr.Slider(label="Batch size", step=1, maximum=10, value=6, info="Tăng lên 6-8 để nhanh hơn")
-                                    ppt_enhancer = gr.Checkbox(label="GFPGAN làm Face enhancer (chậm hơn nhiều)")
-                                    
-
+                                    lecture_pose_style = gr.Slider(minimum=0, maximum=46, step=1, label="Pose style", value=0)
+                                    lecture_size_of_image = gr.Radio([256, 512], value=256, label='Độ phân giải ảnh', info="256 = Nhanh, 512 = Chất lượng cao")
+                                    lecture_preprocess_type = gr.Radio(['crop', 'resize','full', 'extcrop', 'extfull'], value='crop', label='Xử lý ảnh', info="crop = Nhanh nhất")
+                                    lecture_is_still_mode = gr.Checkbox(label="Still Mode (ít chuyển động đầu)")
+                                    lecture_batch_size = gr.Slider(label="Batch size", step=1, maximum=10, value=6, info="Tăng lên 6-8 để nhanh hơn")
+                                    lecture_enhancer = gr.Checkbox(label="GFPGAN làm Face enhancer (chậm hơn)")
                                     
                                     # Fast mode preset button
-                                    fast_mode_btn = gr.Button(
+                                    lecture_fast_mode_btn = gr.Button(
                                         '⚡ Chế độ nhanh (256px, batch=6, không enhancer)',
-                                        elem_id="fast_mode_btn",
+                                        elem_id="lecture_fast_mode_btn",
                                         variant='secondary'
                                     )
                                     
-                                    def set_fast_mode():
+                                    def set_lecture_fast_mode():
                                         return 256, 'crop', False, 6, False, 0
                                     
-                                    fast_mode_btn.click(
-                                        fn=set_fast_mode,
-                                        outputs=[ppt_size_of_image, ppt_preprocess_type, ppt_is_still_mode, ppt_batch_size, ppt_enhancer, ppt_pose_style]
+                                    lecture_fast_mode_btn.click(
+                                        fn=set_lecture_fast_mode,
+                                        outputs=[lecture_size_of_image, lecture_preprocess_type, lecture_is_still_mode, lecture_batch_size, lecture_enhancer, lecture_pose_style]
                                     )
                         
                         # Results
-                        with gr.Tabs(elem_id="ppt_results"):
-                            gr.Markdown("### 🎬 Kết quả")
-                            ppt_final_video = gr.Video(label="Video cuối cùng", format="mp4").style(width=512)
+                        with gr.Tabs(elem_id="lecture_results"):
+                            gr.Markdown("### 🎬 Video Bài Giảng")
+                            lecture_final_video = gr.Video(label="Video bài giảng hoàn chỉnh", format="mp4").style(width=512)
+                            
+                            gr.Markdown("### 📊 Thông tin Video")
+                            lecture_info = gr.Textbox(
+                                label="Thông tin chi tiết",
+                                lines=4,
+                                interactive=False,
+                                elem_id="lecture_info"
+                            )
                 
-                # PowerPoint event handlers
-                def extract_ppt_text(file):
+                # Lecture event handlers
+                def extract_lecture_slides(file):
                     if file:
-                        slides = extract_text_from_pptx(file)
-                        if slides:
-                            return "\n\n--- SLIDE ---\n\n".join(slides)
+                        slides_data = extract_slides_from_pptx(file)
+                        if slides_data:
+                            slides_text = []
+                            for i, slide in enumerate(slides_data):
+                                slides_text.append(f"Slide {i+1}: {slide['text'][:100]}...")
+                            return "\n\n".join(slides_text)
                     return "❌ Vui lòng chọn file PowerPoint!"
                 
-                def generate_ppt_video(pptx, img, lang, preprocess, still, enh, batch, size, pose):
-                    return process_powerpoint_to_video(
-                        sad_talker, pptx, img, lang, preprocess, still, enh, batch, size, pose
+                def generate_lecture_video_handler(pptx, img, lang, preprocess, still, enh, batch, size, pose):
+                    if not pptx or not img:
+                        return None, "❌ Vui lòng chọn file PowerPoint và ảnh giáo viên!"
+                    
+                    slides_data = extract_slides_from_pptx(pptx)
+                    if not slides_data:
+                        return None, "❌ Không thể trích xuất nội dung từ PowerPoint!"
+                    
+                    return create_lecture_video(
+                        sad_talker, slides_data, img, lang, preprocess, still, enh, batch, size, pose
                     )
                 
-                extract_ppt_btn.click(
-                    fn=extract_ppt_text,
-                    inputs=[pptx_file],
-                    outputs=[ppt_extracted_text]
+                extract_lecture_slides_btn.click(
+                    fn=extract_lecture_slides,
+                    inputs=[lecture_pptx_file],
+                    outputs=[lecture_slides_preview]
                 )
                 
-                generate_ppt_video_btn.click(
-                    fn=generate_ppt_video,
+                generate_lecture_btn.click(
+                    fn=generate_lecture_video_handler,
                     inputs=[
-                        pptx_file, ppt_source_image, ppt_audio_language,
-                        ppt_preprocess_type, ppt_is_still_mode, ppt_enhancer, ppt_batch_size, ppt_size_of_image, ppt_pose_style
+                        lecture_pptx_file, lecture_source_image, lecture_audio_language,
+                        lecture_preprocess_type, lecture_is_still_mode, lecture_enhancer, lecture_batch_size, lecture_size_of_image, lecture_pose_style
                     ],
-                    outputs=[ppt_final_video, ppt_status]
+                    outputs=[lecture_final_video, lecture_status]
                 )
     return sadtalker_interface
 
