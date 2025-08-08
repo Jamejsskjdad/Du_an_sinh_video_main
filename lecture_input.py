@@ -1,11 +1,51 @@
 import os
-import gradio as gr
-import tempfile
 import zipfile
+import subprocess
+import tempfile
+
+import gradio as gr
 import xml.etree.ElementTree as ET
+from shutil import which
+
 from gtts import gTTS
 from pptx import Presentation
-import time
+from pdf2image import convert_from_path
+
+
+
+def convert_pptx_to_images(pptx_path, dpi=220):
+    # Kiểm tra LibreOffice
+    if which("soffice") is None:
+        raise RuntimeError("Không tìm thấy LibreOffice (soffice). Vui lòng cài LibreOffice để chuyển PPTX -> PDF.")
+
+    tmpdir = tempfile.mkdtemp(prefix="pptx2img_")
+    # Chuyển PPTX -> PDF
+    try:
+        subprocess.run(
+            ["soffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, pptx_path],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Chuyển PPTX sang PDF thất bại: {e}")
+
+    pdf_path = os.path.join(tmpdir, os.path.splitext(os.path.basename(pptx_path))[0] + ".pdf")
+    if not os.path.exists(pdf_path):
+        raise RuntimeError("Không tạo được PDF từ PPTX. Kiểm tra file đầu vào.")
+
+    # PDF -> PNG (cần Poppler)
+    try:
+        images = convert_from_path(pdf_path, dpi=dpi, output_folder=tmpdir, fmt='png')
+    except Exception as e:
+        raise RuntimeError("Lỗi convert PDF -> ảnh. Có thể thiếu Poppler (poppler-utils).") from e
+
+    img_paths = []
+    for i, img in enumerate(images, 1):
+        img_path = os.path.join(tmpdir, f"slide-{i:02d}.png")
+        img.save(img_path)
+        img_paths.append(img_path)
+
+    # Trả về danh sách đường dẫn ảnh theo thứ tự slide
+    return img_paths
 
 def convert_text_to_audio(text, language='vi'):
     """
@@ -110,36 +150,25 @@ def read_text_file(file):
         return "", f"❌ Lỗi đọc file: {str(e)}"
 
 def extract_slides_from_pptx(pptx_file):
-    """
-    Extract slides as images from PowerPoint file
-    Returns list of slide images and their text content
-    """
-    try:
-        slides_data = []
-        prs = Presentation(pptx_file.name)
-        
-        for i, slide in enumerate(prs.slides):
-            # Extract text from slide
-            slide_text = ""
-            for shape in slide.shapes:
-                if hasattr(shape, "text"):
-                    slide_text += shape.text + " "
-            
-            # Convert slide to image (simplified approach)
-            # In a real implementation, you'd use a library like python-pptx with rendering
-            # For now, we'll create a placeholder image with text
-            slide_text = slide_text.strip()
-            if slide_text:
-                slides_data.append({
-                    'slide_number': i + 1,
-                    'text': slide_text,
-                    'image_path': None  # Will be created later
-                })
-        
-        return slides_data
-    except Exception as e:
-        print(f"Error extracting slides: {str(e)}")
-        return []
+    slides_data = []
+    image_paths = convert_pptx_to_images(pptx_file.name, dpi=220)
+    prs = Presentation(pptx_file.name)
+
+    for i, slide in enumerate(prs.slides):
+        text_chunks = []
+        for shape in slide.shapes:
+            if hasattr(shape, "text") and shape.text:
+                text_chunks.append(shape.text.strip())
+        text = " ".join(filter(None, text_chunks))
+
+        slides_data.append({
+            'slide_number': i + 1,
+            'text': text.strip(),
+            'image_path': image_paths[i] if i < len(image_paths) else None
+        })
+    return slides_data
+
+
 
 def extract_lecture_slides(file):
     """Handler function for extracting slides from PowerPoint"""

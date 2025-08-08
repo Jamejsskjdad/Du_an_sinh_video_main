@@ -147,13 +147,27 @@ def create_lecture_video(sad_talker, slides_data, source_image, language, prepro
                     print(f"❌ Original source image also lost, stopping process")
                     break
             
-            # Create slide image
+            # Determine slide image: use original if available, otherwise generate from text
             slide_image_path = os.path.join(output_dir, f"slide_{i+1:02d}.png")
-            slide_image = create_slide_image_with_text(slide_data['text'], slide_image_path)
-            
-            if not slide_image:
-                print(f"❌ Failed to create slide image for slide {i+1}")
-                continue
+            original_image = slide_data.get('image_path')
+            if original_image and os.path.exists(original_image):
+                # Copy the original slide image into the output directory
+                try:
+                    shutil.copy2(original_image, slide_image_path)
+                except Exception as e:
+                    print(f"⚠️ Could not copy original slide image for slide {i+1}: {e}")
+                    # Fallback: create a placeholder image with text
+                    generated = create_slide_image_with_text(slide_data['text'], slide_image_path)
+                    if not generated:
+                        print(f"❌ Failed to create slide image for slide {i+1}")
+                        continue
+            else:
+                # No original image available; create a placeholder image from text
+                generated = create_slide_image_with_text(slide_data['text'], slide_image_path)
+                if not generated:
+                    print(f"❌ Failed to create slide image for slide {i+1}")
+                    continue
+
             
             # Generate audio for slide text
             audio_path = convert_text_to_audio(slide_data['text'], language)
