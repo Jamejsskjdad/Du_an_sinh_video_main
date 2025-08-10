@@ -2,6 +2,7 @@ import os
 import zipfile
 import subprocess
 import tempfile
+import logging
 
 import gradio as gr
 import xml.etree.ElementTree as ET
@@ -10,6 +11,10 @@ from shutil import which
 from gtts import gTTS
 from pptx import Presentation
 from pdf2image import convert_from_path
+from src.utils.math_formula_processor import MathFormulaProcessor, process_math_text
+
+# Thiết lập logging
+logger = logging.getLogger(__name__)
 
 
 
@@ -152,20 +157,42 @@ def read_text_file(file):
 def extract_slides_from_pptx(pptx_file):
     slides_data = []
     image_paths = convert_pptx_to_images(pptx_file.name, dpi=220)
-    prs = Presentation(pptx_file.name)
-
-    for i, slide in enumerate(prs.slides):
-        text_chunks = []
-        for shape in slide.shapes:
-            if hasattr(shape, "text") and shape.text:
-                text_chunks.append(shape.text.strip())
-        text = " ".join(filter(None, text_chunks))
-
-        slides_data.append({
-            'slide_number': i + 1,
-            'text': text.strip(),
-            'image_path': image_paths[i] if i < len(image_paths) else None
-        })
+    
+    # Sử dụng MathFormulaProcessor để xử lý toàn bộ PowerPoint
+    math_processor = MathFormulaProcessor()
+    processed_result = math_processor.process_powerpoint_text(pptx_file.name)
+    
+    if processed_result.get('error'):
+        # Nếu có lỗi, fallback về phương pháp cũ
+        logger.warning(f"Lỗi xử lý công thức toán học: {processed_result['error']}, sử dụng phương pháp cũ")
+        prs = Presentation(pptx_file.name)
+        
+        for i, slide in enumerate(prs.slides):
+            text_chunks = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text:
+                    text_chunks.append(shape.text.strip())
+            text = " ".join(filter(None, text_chunks))
+            
+            # Vẫn xử lý ký tự đặc biệt cơ bản
+            processed_text = process_math_text(text.strip())
+            
+            slides_data.append({
+                'slide_number': i + 1,
+                'text': processed_text,
+                'image_path': image_paths[i] if i < len(image_paths) else None,
+                'has_math_objects': False
+            })
+    else:
+        # Sử dụng kết quả đã xử lý
+        for slide_info in processed_result['slides']:
+            slides_data.append({
+                'slide_number': slide_info['slide_number'],
+                'text': slide_info['processed_text'],
+                'image_path': image_paths[slide_info['slide_number'] - 1] if slide_info['slide_number'] - 1 < len(image_paths) else None,
+                'has_math_objects': slide_info['has_math_objects']
+            })
+    
     return slides_data
 
 
@@ -176,9 +203,25 @@ def extract_lecture_slides(file):
         slides_data = extract_slides_from_pptx(file)
         if slides_data:
             slides_text = []
+            total_math_slides = 0
+            
             for i, slide in enumerate(slides_data):
-                slides_text.append(f"Slide {i+1}: {slide['text'][:100]}...")
-            return "\n\n".join(slides_text)
+                slide_num = slide['slide_number']
+                text_preview = slide['text'][:100] + "..." if len(slide['text']) > 100 else slide['text']
+                
+                # Thêm thông tin về công thức toán học
+                if slide.get('has_math_objects', False):
+                    slides_text.append(f"Slide {slide_num}: {text_preview} [📐 Có công thức toán học]")
+                    total_math_slides += 1
+                else:
+                    slides_text.append(f"Slide {slide_num}: {text_preview}")
+            
+            # Thêm thống kê
+            summary = f"\n\n📊 Thống kê: {len(slides_data)} slides, {total_math_slides} slides có công thức toán học"
+            if total_math_slides > 0:
+                summary += "\n✅ Đã xử lý thành công các ký tự đặc biệt và công thức toán học!"
+            
+            return "\n\n".join(slides_text) + summary
     return "❌ Vui lòng chọn file PowerPoint!"
 
 def set_lecture_fast_mode():
