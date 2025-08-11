@@ -16,7 +16,7 @@ except:
 def sadtalker_demo_with_home(checkpoint_path='checkpoints', config_path='src/config', warpfn=None):
     sad_talker = SadTalker(checkpoint_path, config_path, lazy_load=True)
 
-    with gr.Blocks(analytics_enabled=False, title="SadTalker", css=custom_home_css) as sadtalker_interface:
+    with gr.Blocks(analytics_enabled=False, title="SadTalker", css=custom_home_css()) as sadtalker_interface:
         with gr.Tabs():
             # --- TAB HOME ---
             with gr.TabItem("🏠 Trang chủ"):
