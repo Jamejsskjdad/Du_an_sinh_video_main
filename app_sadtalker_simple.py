@@ -52,8 +52,41 @@ def sadtalker_demo_with_home(checkpoint_path='checkpoints', config_path='src/con
                     </div>
                 """)
 
-                # Nút quay lại trang chủ
-                back_btn = gr.Button("← Quay lại trang chủ", variant="secondary")
+                # Nút quay lại trang chủ - nút mũi tên cong đẹp mắt
+                back_btn = gr.HTML("""
+                    <div style="position: fixed; top: 20px; left: 20px; z-index: 1000;">
+                        <button id="back-home-btn" 
+                                style="
+                                    width: 48px; 
+                                    height: 48px; 
+                                    border-radius: 50%; 
+                                    border: none; 
+                                    background: rgba(255, 255, 255, 0.9); 
+                                    backdrop-filter: blur(10px);
+                                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+                                    cursor: pointer;
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    transition: all 0.3s ease;
+                                "
+                                onmouseover="this.style.transform='scale(1.1)'; this.style.background='rgba(255, 255, 255, 1)'; this.style.boxShadow='0 6px 20px rgba(0, 0, 0, 0.2)';"
+                                onmouseout="this.style.transform='scale(1)'; this.style.background='rgba(255, 255, 255, 0.9)'; this.style.boxShadow='0 4px 12px rgba(0, 0, 0, 0.15)';"
+                                onclick="document.querySelector('#back-home-btn-gradio').click();">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M19 12H5M12 19L5 12L12 5" 
+                                      stroke="#374151" 
+                                      stroke-width="2.5" 
+                                      stroke-linecap="round" 
+                                      stroke-linejoin="round"
+                                      style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.1));"/>
+                            </svg>
+                        </button>
+                    </div>
+                """)
+                
+                # Button ẩn để trigger event Gradio
+                back_btn_gradio = gr.Button("Back to Home", elem_id="back-home-btn-gradio", visible=False)
 
                 # Tạo giao diện input
                 input_components = create_lecture_input_interface()
@@ -89,7 +122,7 @@ def sadtalker_demo_with_home(checkpoint_path='checkpoints', config_path='src/con
             outputs=[home_page, lecture_page]
         )
         
-        back_btn.click(
+        back_btn_gradio.click(
             fn=switch_to_home,
             outputs=[home_page, lecture_page]
         )
