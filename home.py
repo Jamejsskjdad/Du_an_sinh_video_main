@@ -85,31 +85,88 @@ def create_home_tab():
             .navfx:hover{ color:#111827; }
             .navfx:hover::after{ width:100%; }
 
-            /* -------- Feature cards -------- */
+            /* === Feature cards - CSS riêng biệt === */
+            .feature-card{
+            border-radius: var(--radius);
+            background: #fff;
+            text-align: center;
+            border: 1px solid #e5e7eb;         /* viền xám mặc định */
+            box-shadow: none;                   /* không có đổ bóng khi chưa hover */
+            transition:
+                transform var(--transition),
+                filter var(--transition),
+                box-shadow var(--transition),
+                border-color var(--transition);
+            will-change: transform;
+            box-sizing: border-box;             /* để viền không làm nảy layout */
+            }
+
+            /* Hiệu ứng hover cho feature cards */
+            .feature-card:hover{
+            border-color: #3B82F6;              /* viền xanh rõ ràng */
+            box-shadow: 0 0 0 1px #3B82F6 inset, var(--shadow-md);  /* viền xanh bên trong mỏng hơn + bóng */
+            transform: translateY(-6px) scale(1.02);
+            filter: saturate(1.03);
+            }
+
+            /* icon nhích nhẹ khi hover */
+            .feature-card .card-icon{ transition: transform var(--transition); }
+            .feature-card:hover .card-icon{ transform: translateY(-3px); }
+
+            /* === Card chung cho các card khác === */
             .cardfx{
-              border-radius: var(--radius);
-              transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition), filter var(--transition);
-              box-shadow: var(--shadow-sm); will-change: transform;
-              border: 1px solid #e5e7eb;
-              background: #fff;
-              text-align: center;
+            border-radius: var(--radius);
+            background: #fff;
+            text-align: center;
+            border: 1px solid #e5e7eb;
+            box-shadow: none;                   /* không có đổ bóng khi chưa hover */
+            transition:
+                transform var(--transition),
+                filter var(--transition),
+                box-shadow var(--transition),
+                border-color var(--transition);
+            will-change: transform;
+            box-sizing: border-box;
             }
+
             .cardfx:hover{
-              transform: translateY(-6px) scale(1.02);
-              box-shadow: var(--shadow-md);
-              border-color: rgba(139,92,246,.35);
-              filter: saturate(1.03);
+            border-color: rgba(139,92,246,.35);  /* viền tím nhẹ cho card khác */
+            box-shadow: var(--shadow-md);        /* chỉ có đổ bóng khi hover */
+            transform: translateY(-6px) scale(1.02);
+            filter: saturate(1.03);
             }
-            .cardfx .card-icon{
-              display:inline-flex; transition: transform var(--transition);
-            }
+
+            .cardfx .card-icon{ transition: transform var(--transition); }
             .cardfx:hover .card-icon{ transform: translateY(-3px); }
+            /* ---- Features grid: ép các item cao bằng nhau ---- */
+            .features-grid{
+            /* mỗi hàng lấy chiều cao bằng nhau */
+            grid-auto-rows: 1fr;
+            align-items: stretch;
+            }
+
+            /* cho wrapper tilt và thẻ bên trong “kéo giãn” theo ô lưới */
+            .features-grid .tilt,
+            .features-grid .tilt-inner,
+            .features-grid .feature-card{
+            height: 100%;
+            }
+
+            /* bên trong thẻ dùng flex để nội dung xếp dọc gọn gàng */
+            .features-grid .feature-card{
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            min-height: 320px;
+            }
+
+
 
             /* -------- Showcase video tiles -------- */
             .showcase-card{
               position: relative; overflow:hidden; border-radius: var(--radius);
               transition: transform var(--transition), box-shadow var(--transition), filter var(--transition);
-              box-shadow: var(--shadow-sm);
+              box-shadow: none;                  /* không có đổ bóng khi chưa hover */
               transform: translateZ(0);
             }
             .showcase-card:hover{ transform: translateY(-6px) scale(1.02); box-shadow: var(--shadow-md); }
@@ -126,9 +183,10 @@ def create_home_tab():
 
             /* -------- Steps (How it works) -------- */
             .stepfx{
-              border-radius: var(--radius); transition: transform var(--transition), box-shadow var(--transition);
+              border-radius: var(--radius);
+              /* Loại bỏ hiệu ứng hover - chỉ giữ lại border-radius */
             }
-            .stepfx:hover{ transform: translateY(-4px); box-shadow: var(--shadow-sm); }
+            /* .stepfx:hover{ transform: translateY(-4px); box-shadow: var(--shadow-sm); } */
 
             /* -------- Tilt/parallax 3D -------- */
             .tilt{ perspective: 800px; transform-style: preserve-3d; }
@@ -261,54 +319,54 @@ def create_home_tab():
                     <p style="font-size: 20px; color: #6B7280; max-width: 600px; margin: 0 auto;">Tất cả những gì bạn cần để tạo video nói chuyện tuyệt vời từ ảnh</p>
                 </div>
                 <div class="features-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 32px;">
-                    <!-- Card 1 -->
-                    <div class="tilt">
-                      <div class="tilt-inner cardfx" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
-                        <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">🎬</div>
-                        <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Ảnh Thành Video</h3>
-                        <p style="color: #6B7280; line-height: 1.6;">Chuyển đổi bất kỳ ảnh chân dung nào thành video nói chuyện thực tế với đồng bộ môi và biểu cảm khuôn mặt tự nhiên.</p>
-                      </div>
-                    </div>
-                    <!-- Card 2 -->
-                    <div class="tilt">
-                      <div class="tilt-inner cardfx" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
-                        <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">🎵</div>
-                        <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Hỗ Trợ Âm Thanh</h3>
-                        <p style="color: #6B7280; line-height: 1.6;">Tải lên file âm thanh của bạn hoặc sử dụng tính năng chuyển văn bản thành giọng nói để làm cho ảnh của bạn nói chuyện với đồng bộ hoàn hảo.</p>
-                      </div>
-                    </div>
-                    <!-- Card 3 -->
-                    <div class="tilt">
-                      <div class="tilt-inner cardfx" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
-                        <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">🎨</div>
-                        <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Tùy Chỉnh</h3>
-                        <p style="color: #6B7280; line-height: 1.6;">Điều chỉnh biểu cảm, thời gian và tùy chỉnh đầu ra để phù hợp với tầm nhìn sáng tạo của bạn.</p>
-                      </div>
-                    </div>
-                    <!-- Card 4 -->
-                    <div class="tilt">
-                      <div class="tilt-inner cardfx" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
-                        <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">⚡</div>
-                        <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Xử Lý Nhanh</h3>
-                        <p style="color: #6B7280; line-height: 1.6;">Tạo video nói chuyện chất lượng cao trong vài phút, không phải hàng giờ. AI được tối ưu hóa của chúng tôi đảm bảo kết quả nhanh chóng.</p>
-                      </div>
-                    </div>
-                    <!-- Card 5 -->
-                    <div class="tilt">
-                      <div class="tilt-inner cardfx" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
-                        <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">🔒</div>
-                        <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Bảo Mật</h3>
-                        <p style="color: #6B7280; line-height: 1.6;">Ảnh và video của bạn được xử lý an toàn và không bao giờ được lưu trữ trên máy chủ của chúng tôi sau khi xử lý.</p>
-                      </div>
-                    </div>
-                    <!-- Card 6 -->
-                    <div class="tilt">
-                      <div class="tilt-inner cardfx" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
-                        <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">📱</div>
-                        <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Nhiều Định Dạng</h3>
-                        <p style="color: #6B7280; line-height: 1.6;">Xuất ra nhiều định dạng và độ phân giải phù hợp cho mạng xã hội, thuyết trình hoặc sử dụng cá nhân.</p>
-                      </div>
-                    </div>
+                                         <!-- Card 1 -->
+                     <div class="tilt">
+                       <div class="tilt-inner feature-card" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
+                         <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">🎬</div>
+                          <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Ảnh Thành Video</h3>
+                          <p style="color: #6B7280; line-height: 1.6;">Chuyển đổi bất kỳ ảnh chân dung nào thành video nói chuyện thực tế với đồng bộ môi và biểu cảm khuôn mặt tự nhiên.</p>
+                       </div>
+                     </div>
+                     <!-- Card 2 -->
+                     <div class="tilt">
+                       <div class="tilt-inner feature-card" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
+                         <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">🎵</div>
+                          <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Hỗ Trợ Âm Thanh</h3>
+                          <p style="color: #6B7280; line-height: 1.6;">Tải lên file âm thanh của bạn hoặc sử dụng tính năng chuyển văn bản thành giọng nói để làm cho ảnh của bạn nói chuyện với đồng bộ hoàn hảo.</p>
+                       </div>
+                     </div>
+                     <!-- Card 3 -->
+                     <div class="tilt">
+                       <div class="tilt-inner feature-card" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
+                         <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">🎨</div>
+                          <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Tùy Chỉnh</h3>
+                          <p style="color: #6B7280; line-height: 1.6;">Điều chỉnh biểu cảm, thời gian và tùy chỉnh đầu ra để phù hợp với tầm nhìn sáng tạo của bạn.</p>
+                       </div>
+                     </div>
+                     <!-- Card 4 -->
+                     <div class="tilt">
+                       <div class="tilt-inner feature-card" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
+                         <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">⚡</div>
+                          <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Xử Lý Nhanh</h3>
+                          <p style="color: #6B7280; line-height: 1.6;">Tạo video nói chuyện chất lượng cao trong vài phút, không phải hàng giờ. AI được tối ưu hóa của chúng tôi đảm bảo kết quả nhanh chóng.</p>
+                       </div>
+                     </div>
+                     <!-- Card 5 -->
+                     <div class="tilt">
+                       <div class="tilt-inner feature-card" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
+                         <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">🔒</div>
+                          <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Bảo Mật</h3>
+                          <p style="color: #6B7280; line-height: 1.6;">Ảnh và video của bạn được xử lý an toàn và không bao giờ được lưu trữ trên máy chủ của chúng tôi sau khi xử lý.</p>
+                       </div>
+                     </div>
+                     <!-- Card 6 -->
+                     <div class="tilt">
+                       <div class="tilt-inner feature-card" style="background: white; padding: 32px; border: 1px solid #e5e7eb;">
+                         <div class="card-icon" style="width: 64px; height: 64px; background: linear-gradient(135deg, #8B5CF6, #3B82F6); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; font-size: 24px; color: white;">📱</div>
+                          <h3 style="font-size: 24px; font-weight: bold; margin-bottom: 16px; color: #111827;">Nhiều Định Dạng</h3>
+                          <p style="color: #6B7280; line-height: 1.6;">Xuất ra nhiều định dạng và độ phân giải phù hợp cho mạng xã hội, thuyết trình hoặc sử dụng cá nhân.</p>
+                       </div>
+                     </div>
                 </div>
             </div>
         </section>
