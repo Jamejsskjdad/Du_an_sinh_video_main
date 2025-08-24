@@ -93,13 +93,13 @@ def sadtalker_demo_with_home(checkpoint_path='checkpoints', config_path='src/con
                 
                 # Kết nối với output handler
                 input_components['generate_btn'].click(
-                    fn=lambda pptx, img, lang, preprocess, still, enh, batch, size, pose: generate_lecture_video_handler(
-                        sad_talker, pptx, img, lang, preprocess, still, enh, batch, size, pose
+                    fn=lambda pptx, img, voice_id, preprocess, still, enh, batch, size, pose: generate_lecture_video_handler(
+                        sad_talker, pptx, img, voice_id, preprocess, still, enh, batch, size, pose
                     ),
                     inputs=[
                         input_components['pptx_file'], 
                         input_components['source_image'], 
-                        input_components['audio_language'],
+                        input_components['voice_id'],
                         input_components['preprocess_type'], 
                         input_components['is_still_mode'], 
                         input_components['enhancer'], 

@@ -1,0 +1,9 @@
+{
+  "user_id": "current_user",
+  "voice_id": "xin_chao_cac_ban_minh_la_tien_si_vu_duc_e7f706ab-87b8-4685-83b1-dc96294c91ce",
+  "language": "vi",
+  "sample_rate": 22050,
+  "audio_length": 1170479,
+  "model_type": "xtts_v2_api",
+  "created_at": 1756047455.4157178
+}

@@ -1,0 +1,88 @@
+# Audio to Expression Configuration for SadTalker
+# This file configures audio processing parameters to prevent 3DMM extraction errors
+
+AUDIO:
+  SAMPLE_RATE: 16000  # Must match SadTalker pipeline expectation
+  CHANNELS: 1  # Mono audio
+  FORMAT: "PCM_S16"  # 16-bit signed PCM
+  HOP_LENGTH: 160  # 10ms hop at 16kHz
+  WIN_LENGTH: 640  # 40ms window at 16kHz
+  N_FFT: 1024  # FFT size
+  MEL_BINS: 80  # Mel spectrogram bins
+  FMIN: 0  # Minimum frequency
+  FMAX: 8000  # Maximum frequency
+
+PROCESSING:
+  FRAME_LEN: 32  # Number of frames to process
+  COEFF_LEN: 73  # Coefficient length for expression
+  PAD_DURATION: 0.5  # Pad audio with silence (seconds)
+  NORMALIZE: True  # Normalize audio
+  PREEMPHASIS: 0.97  # Pre-emphasis coefficient
+
+FEATURE_EXTRACTION:
+  USE_MEL: True  # Use mel spectrogram
+  USE_MFCC: False  # Don't use MFCC
+  USE_ENERGY: True  # Include energy features
+  USE_PITCH: True  # Include pitch features
+  USE_PHONEME: True  # Include phoneme features
+
+OUTPUT:
+  SAVE_FEATURES: False  # Don't save intermediate features
+  VERBOSE: True  # Enable verbose logging
+  DEBUG: False  # Disable debug mode
+
+# Legacy parameters for compatibility
+DATASET:
+  TRAIN_FILE_LIST: /apdcephfs_cq2/share_1290939/wenxuazhang/code/file_list/train.txt
+  EVAL_FILE_LIST: /apdcephfs_cq2/share_1290939/wenxuazhang/code/file_list/val.txt
+  TRAIN_BATCH_SIZE: 32
+  EVAL_BATCH_SIZE: 32
+  EXP: True
+  EXP_DIM: 64
+  FRAME_LEN: 32
+  COEFF_LEN: 73
+  NUM_CLASSES: 46
+  AUDIO_ROOT_PATH: /apdcephfs_cq2/share_1290939/wenxuazhang/voxceleb1/wav
+  COEFF_ROOT_PATH: /apdcephfs_cq2/share_1290939/wenxuazhang/voxceleb1/wav2lip_3dmm
+  LMDB_PATH: /apdcephfs_cq2/share_1290939/shadowcun/datasets/VoxCeleb/v1/imdb
+  DEBUG: True
+  NUM_REPEATS: 2
+  T: 40
+
+MODEL:
+  FRAMEWORK: V2
+  AUDIOENCODER:
+    LEAKY_RELU: True
+    NORM: 'IN'
+  DISCRIMINATOR:
+    LEAKY_RELU: False
+    INPUT_CHANNELS: 6
+  CVAE:
+    AUDIO_EMB_IN_SIZE: 512
+    AUDIO_EMB_OUT_SIZE: 128
+    SEQ_LEN: 32
+    LATENT_SIZE: 256
+    ENCODER_LAYER_SIZES: [192, 1024]
+    DECODER_LAYER_SIZES: [1024, 192]
+
+TRAIN:
+  MAX_EPOCH: 300
+  GENERATOR:
+    LR: 2.0e-5
+  DISCRIMINATOR:
+    LR: 1.0e-5
+  LOSS:
+    W_FEAT: 0
+    W_COEFF_EXP: 2
+    W_LM: 1.0e-2
+    W_LM_MOUTH: 0
+    W_REG: 0
+    W_SYNC: 0
+    W_COLOR: 0
+    W_EXPRESSION: 0
+    W_LIPREADING: 0.01
+    W_LIPREADING_VV: 0
+    W_EYE_BLINK: 4
+
+TAG:
+  NAME: small_dataset

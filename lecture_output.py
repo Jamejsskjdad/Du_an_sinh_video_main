@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime
 from moviepy.editor import VideoFileClip, concatenate_videoclips, CompositeVideoClip, TextClip, ImageClip, AudioFileClip
 from PIL import Image, ImageDraw, ImageFont
-from lecture_input import convert_text_to_audio, extract_slides_from_pptx
+from lecture_input import convert_text_to_audio, convert_text_to_audio_with_voice, extract_slides_from_pptx
 
 def get_audio_duration(audio_path):
     """
@@ -66,9 +66,10 @@ def create_slide_image_with_text(text, output_path, width=1920, height=1080):
         print(f"Error creating slide image: {str(e)}")
         return None
 
-def generate_video_for_text(sad_talker, source_image, text, language, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style):
+def generate_video_for_text(sad_talker, source_image, text, language, user_id, voice_id, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style):
     """
     Generate video for a single text using SadTalker
+    REQUIRES voice_id to be provided
     """
     try:
         # Verify source image exists
@@ -76,8 +77,13 @@ def generate_video_for_text(sad_talker, source_image, text, language, preprocess
             print(f"Source image not found: {source_image}")
             return None
         
-        # Convert text to audio
-        audio_path = convert_text_to_audio(text, language)
+        # Bắt buộc phải có voice_id
+        if not voice_id:
+            raise Exception("❌ Vui lòng chọn giọng nhân bản trước khi tạo video!")
+        
+        # Convert text to audio using registered voice (bắt buộc)
+        audio_path = convert_text_to_audio_with_voice(text, user_id, voice_id, language)
+            
         if not audio_path:
             print("Failed to convert text to audio")
             return None
@@ -107,7 +113,46 @@ def generate_video_for_text(sad_talker, source_image, text, language, preprocess
         print(f"Error generating video for text: {str(e)}")
         return None
 
-def create_lecture_video(sad_talker, slides_data, source_image, language, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style):
+def generate_video_for_text_with_audio(sad_talker, source_image, audio_path, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style):
+    """
+    Generate video using existing audio file (for lecture video)
+    """
+    try:
+        # Verify source image exists
+        if not source_image or not os.path.exists(source_image):
+            print(f"Source image not found: {source_image}")
+            return None
+        
+        # Verify audio exists
+        if not audio_path or not os.path.exists(audio_path):
+            print(f"Audio file not found: {audio_path}")
+            return None
+        
+        print(f"Generating video with existing audio: {audio_path}")
+        print(f"Image exists: {os.path.exists(source_image)}")
+        print(f"Audio exists: {os.path.exists(audio_path)}")
+        
+        # Generate video using the existing audio file
+        video_path = sad_talker.test(
+            source_image, audio_path, preprocess_type, is_still_mode, 
+            enhancer, batch_size, size_of_image, pose_style
+        )
+        
+        # DON'T clean up audio file here - it's used by the lecture video
+        # The lecture video will clean it up later
+        
+        if video_path and os.path.exists(video_path):
+            print(f"✅ Video generated successfully with existing audio: {video_path}")
+            return video_path
+        else:
+            print(f"❌ Video generation failed or file not found: {video_path}")
+            return None
+            
+    except Exception as e:
+        print(f"Error generating video with existing audio: {str(e)}")
+        return None
+
+def create_lecture_video(sad_talker, slides_data, source_image, language, user_id, voice_id, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style):
     """
     Create a lecture video combining slides and teacher video
     """
@@ -120,6 +165,8 @@ def create_lecture_video(sad_talker, slides_data, source_image, language, prepro
         os.makedirs(output_dir, exist_ok=True)
         
         print(f"Creating lecture video in: {output_dir}")
+        print(f"Using voice: {voice_id}")
+        print(f"Note: Language will be automatically detected from voice profile")
         
         # Copy source image to safe location
         safe_image_path = os.path.join(output_dir, "source_image.png")
@@ -168,13 +215,17 @@ def create_lecture_video(sad_talker, slides_data, source_image, language, prepro
                     print(f"❌ Failed to create slide image for slide {i+1}")
                     continue
 
+            # Bắt buộc phải có voice_id cho tất cả slides
+            if not voice_id:
+                raise Exception("❌ Vui lòng chọn giọng nhân bản trước khi tạo video bài giảng!")
             
-            # Generate audio for slide text
-            audio_path = convert_text_to_audio(slide_data['text'], language)
+            # Generate audio for slide text using registered voice (bắt buộc)
+            audio_path = convert_text_to_audio_with_voice(slide_data['text'], user_id, voice_id, language)
+                    
             if not audio_path:
                 print(f"❌ Failed to generate audio for slide {i+1}")
                 continue
-            
+                
             # Get audio duration
             audio_duration = get_audio_duration(audio_path)
             print(f"Audio duration for slide {i+1}: {audio_duration:.2f} seconds")
@@ -184,9 +235,9 @@ def create_lecture_video(sad_talker, slides_data, source_image, language, prepro
                 audio_duration = 3.0  # Minimum 3 seconds per slide
                 print(f"⚠️ Audio duration too short, setting to minimum: {audio_duration}s")
             
-            # Generate teacher video
-            teacher_video_path = generate_video_for_text(
-                sad_talker, safe_image_path, slide_data['text'], language, 
+            # Generate teacher video using the SAME audio we created for the slide
+            teacher_video_path = generate_video_for_text_with_audio(
+                sad_talker, safe_image_path, audio_path, 
                 preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style
             )
             
@@ -227,8 +278,23 @@ def create_lecture_video(sad_talker, slides_data, source_image, language, prepro
             teacher_y = slide_height - teacher_height - 50  # 50px margin
             teacher_clip = teacher_clip.set_position((teacher_x, teacher_y))
             
+            # Load audio for the composite video
+            try:
+                audio_clip = AudioFileClip(audio_path)
+                print(f"✅ Audio loaded for slide {i+1}: {audio_path}")
+            except Exception as e:
+                print(f"❌ Error loading audio for slide {i+1}: {str(e)}")
+                audio_clip = None
+            
             # Composite slide and teacher video
             composite_clip = CompositeVideoClip([slide_clip, teacher_clip])
+            
+            # Add audio to the composite video
+            if audio_clip:
+                composite_clip = composite_clip.set_audio(audio_clip)
+                print(f"✅ Audio added to composite video for slide {i+1}")
+            else:
+                print(f"⚠️ No audio added to composite video for slide {i+1}")
             
             # Add to clips list
             slide_clips.append(composite_clip)
@@ -331,15 +397,23 @@ def create_lecture_video(sad_talker, slides_data, source_image, language, prepro
         print(f"Error in create_lecture_video: {str(e)}")
         return None, f"❌ Lỗi tạo video bài giảng: {str(e)}"
 
-def generate_lecture_video_handler(sad_talker, pptx, img, lang, preprocess, still, enh, batch, size, pose):
+def generate_lecture_video_handler(sad_talker, pptx, img, voice_id, preprocess, still, enh, batch, size, pose):
     """Handler function for generating lecture video"""
     if not pptx or not img:
         return None, "❌ Vui lòng chọn file PowerPoint và ảnh giáo viên!"
+    
+    # Bắt buộc phải có giọng nhân bản
+    if not voice_id:
+        return None, "❌ Vui lòng chọn giọng nhân bản trước khi tạo video bài giảng!"
     
     slides_data = extract_slides_from_pptx(pptx)
     if not slides_data:
         return None, "❌ Không thể trích xuất nội dung từ PowerPoint!"
     
+    # Sử dụng "current_user" làm user_id mặc định
+    user_id = "current_user"
+    
+    # Ngôn ngữ sẽ được lấy từ giọng nhân bản, không cần tham số lang
     return create_lecture_video(
-        sad_talker, slides_data, img, lang, preprocess, still, enh, batch, size, pose
+        sad_talker, slides_data, img, None, user_id, voice_id, preprocess, still, enh, batch, size, pose
     )
