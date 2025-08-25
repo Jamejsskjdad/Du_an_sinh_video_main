@@ -393,3 +393,4 @@ if __name__ == "__main__":
     # Test voice profile listing
     profiles = list_voice_profiles()
     print(f"📋 Available profiles: {profiles}")
+
