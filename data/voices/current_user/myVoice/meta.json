@@ -6,5 +6,6 @@
   "audio_length": 1121280,
   "model_type": "xtts_v2_api",
   "created_at": 1756054093.983415,
-  "sample_audio": "data\\voices\\current_user\\myVoice\\sample.wav"
+  "sample_audio": "data\\voices\\current_user\\myVoice\\sample.wav",
+  "lang_hint": "vi"
 }

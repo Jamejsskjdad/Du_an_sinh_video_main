@@ -241,22 +241,41 @@ def handle_register_voice(file_obj):
     audio_path = file_obj.name  # lấy đường dẫn tạm mà Gradio lưu file
     voice_id = os.path.basename(audio_path).split('.')[0]
     
+    print(f"🔍 Debug: Đang đăng ký voice '{voice_id}' từ file: {audio_path}")
+    
+    # Kiểm tra voice đã tồn tại chưa
+    if has_voice("current_user", voice_id):
+        print(f"⚠️  Voice '{voice_id}' đã tồn tại, sẽ ghi đè")
+    
     # Sử dụng ngôn ngữ mặc định là 'vi' cho giọng nhân bản
     success = enroll_voice(audio_path, "current_user", voice_id, lang_hint="vi")
     
     if not success:
+        print(f"❌ Đăng ký voice '{voice_id}' thất bại")
         return "❌ Đăng ký giọng thất bại", gr.update(choices=[])
+    
+    print(f"✅ Đăng ký voice '{voice_id}' thành công")
+    
+    # Đợi một chút để đảm bảo file được lưu
+    import time
+    time.sleep(0.5)
     
     # Refresh dropdown với danh sách giọng mới
     voices = list_voices("current_user")
     voice_choices = [m["voice_id"] for m in voices]
     
+    print(f"🔍 Debug: Danh sách voices sau khi đăng ký: {voice_choices}")
+    print(f"🔍 Debug: Voice ID hiện tại: {voice_id}")
+    print(f"🔍 Debug: Voice ID có trong danh sách: {voice_id in voice_choices}")
+    
     # Tìm voice profile mới nhất để lấy thông tin
     if voices:
         latest_voice = voices[0]  # voices đã được sort theo created_at
         duration = latest_voice.get("audio_length", 0) / latest_voice.get("sample_rate", 48000)
+        print(f"✅ Voice '{voice_id}' đã được lưu với duration: {duration:.1f}s")
         return f"✅ Đã lưu giọng '{voice_id}' (~{duration:.1f}s)", gr.update(choices=voice_choices, value=voice_id)
     else:
+        print(f"⚠️  Không tìm thấy voices sau khi đăng ký")
         return f"✅ Đã lưu giọng '{voice_id}'", gr.update(choices=voice_choices, value=voice_id)
 
 def create_lecture_input_interface():
@@ -283,6 +302,9 @@ def create_lecture_input_interface():
                 label="Trạng thái đăng ký giọng",
                 interactive=False
             )
+            
+            # Button debug để kiểm tra voice store
+            debug_voice_btn = gr.Button("🔍 Debug Voice Store", variant="secondary", size="sm")
 
             lecture_voice_id = gr.Dropdown(
                 choices=[m["voice_id"] for m in list_voices("current_user")],
@@ -296,6 +318,51 @@ def create_lecture_input_interface():
                 fn=handle_register_voice,
                 inputs=[lecture_voice_sample],
                 outputs=[register_voice_status, lecture_voice_id]
+            )
+            
+            # Thêm event để refresh dropdown khi có thay đổi
+            def refresh_voice_dropdown():
+                voices = list_voices("current_user")
+                voice_choices = [m["voice_id"] for m in voices]
+                print(f"🔍 Debug: Refreshing voice dropdown, found {len(voices)} voices: {voice_choices}")
+                return gr.update(choices=voice_choices)
+
+            def debug_voice_store():
+                """Debug function để kiểm tra voice store"""
+                print("🔍 Debug: Kiểm tra voice store...")
+                
+                # Kiểm tra thư mục voices
+                from src.voice.store import ROOT
+                import os
+                voices_dir = ROOT / "current_user"
+                print(f"🔍 Voice directory: {voices_dir}")
+                print(f"🔍 Directory exists: {voices_dir.exists()}")
+                
+                if voices_dir.exists():
+                    for item in voices_dir.iterdir():
+                        print(f"🔍 Found item: {item.name} (dir: {item.is_dir()})")
+                        if item.is_dir():
+                            meta_file = item / "meta.json"
+                            emb_file = item / "embedding.npy"
+                            print(f"  - meta.json exists: {meta_file.exists()}")
+                            print(f"  - embedding.npy exists: {emb_file.exists()}")
+                
+                # Kiểm tra list_voices function
+                voices = list_voices("current_user")
+                print(f"🔍 list_voices result: {voices}")
+                
+                return f"Debug complete. Found {len(voices)} voices."
+            
+            # Button debug voice store
+            debug_voice_btn.click(
+                fn=debug_voice_store,
+                outputs=[register_voice_status]
+            )
+            
+            # Refresh dropdown khi có thay đổi
+            lecture_voice_sample.change(
+                fn=refresh_voice_dropdown,
+                outputs=[lecture_voice_id]
             )
 
             gr.Markdown("### 📝 Nội dung từ PowerPoint")
@@ -330,10 +397,61 @@ def create_lecture_input_interface():
         outputs=[lecture_slides_preview]
     )
 
-    # Bạn sẽ nối generate_lecture_btn với pipeline SadTalker và synthesize audio:
-    # - lấy text từ lecture_slides_preview
-    # - nếu lecture_voice_id có giá trị và profile tồn tại: dùng synthesize()
-    # - nếu không: dùng convert_text_to_audio()
+    # Kết nối generate button với handler
+    def handle_generate_lecture(pptx_file, source_image, voice_id, preprocess_type, is_still_mode, enhancer, batch_size, size_of_image, pose_style):
+        """Handler cho việc tạo video bài giảng"""
+        try:
+            if not source_image:
+                return "❌ Vui lòng chọn ảnh giáo viên", None, "❌ Thiếu ảnh giáo viên"
+            
+            if not pptx_file:
+                return "❌ Vui lòng chọn file PowerPoint", None, "❌ Thiếu file PowerPoint"
+            
+            if not voice_id:
+                return "❌ Vui lòng chọn giọng nhân bản", None, "❌ Thiếu giọng nhân bản"
+            
+            # Kiểm tra voice có tồn tại không
+            if not has_voice("current_user", voice_id):
+                return f"❌ Giọng nói '{voice_id}' không tồn tại. Vui lòng đăng ký lại!", None, f"❌ Voice '{voice_id}' không tồn tại"
+            
+            # Lấy text từ slides preview (cần implement)
+            slides_text = "Hello everybody, I will be teach you..."  # Placeholder
+            
+            # Tạo audio với voice đã chọn
+            audio_path = convert_text_to_audio_with_voice(slides_text, "current_user", voice_id)
+            
+            if not audio_path:
+                return "❌ Không thể tạo audio", None, "❌ Lỗi tạo audio"
+            
+            # TODO: Implement SadTalker pipeline
+            # result_video = generate_sadtalker_video(source_image, audio_path, ...)
+            
+            return "✅ Đang tạo video...", None, f"✅ Audio đã tạo: {audio_path}"
+            
+        except Exception as e:
+            error_msg = f"❌ Lỗi: {str(e)}"
+            return error_msg, None, error_msg
+
+    # Kết nối generate button
+    generate_lecture_btn.click(
+        fn=handle_generate_lecture,
+        inputs=[
+            lecture_pptx_file,
+            lecture_source_image,
+            lecture_voice_id,
+            lecture_preprocess_type,
+            lecture_is_still_mode,
+            lecture_enhancer,
+            lecture_batch_size,
+            lecture_size_of_image,
+            lecture_pose_style
+        ],
+        outputs=[
+            lecture_status,
+            lecture_final_video,
+            lecture_info
+        ]
+    )
 
     return {
         'source_image': lecture_source_image,

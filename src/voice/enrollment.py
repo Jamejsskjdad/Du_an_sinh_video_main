@@ -242,12 +242,32 @@ def enroll_voice(audio_path: str, user_id: str, voice_id: str, lang_hint: str = 
             voice_dir = os.path.join("data", "voices", user_id, voice_id)
             os.makedirs(voice_dir, exist_ok=True)
             
-            # Lưu embedding
+            # Lưu embedding - luôn lưu cả hai format để đảm bảo tương thích
             if TORCH_AVAILABLE:
+                # Lưu PyTorch format
                 torch.save(emb, os.path.join(voice_dir, "embedding.pth"))
-            else:
+                print("✅ Saved embedding.pth (PyTorch format)")
+                
+                # Convert và lưu NumPy format để đảm bảo tương thích
+                if isinstance(emb, torch.Tensor):
+                    emb_np = emb.detach().cpu().numpy()
+                else:
+                    emb_np = np.array(emb)
+                
                 import numpy as np
-                np.save(os.path.join(voice_dir, "embedding.npy"), emb)
+                np.save(os.path.join(voice_dir, "embedding.npy"), emb_np)
+                print("✅ Saved embedding.npy (NumPy format)")
+                
+            else:
+                # Fallback: chỉ lưu NumPy format
+                import numpy as np
+                if isinstance(emb, torch.Tensor):
+                    emb_np = emb.detach().cpu().numpy()
+                else:
+                    emb_np = np.array(emb)
+                
+                np.save(os.path.join(voice_dir, "embedding.npy"), emb_np)
+                print("✅ Saved embedding.npy (NumPy format)")
             
             # Lưu metadata
             metadata = {
@@ -314,16 +334,33 @@ def get_voice_profile(user_id: str, voice_id: str):
         else:
             metadata = {}
         
-        # Load embedding
+        # Load embedding - ưu tiên .npy format để tương thích với has_voice()
         embedding = None
-        embedding_path = os.path.join(voice_dir, "embedding.pth")
-        if os.path.exists(embedding_path) and TORCH_AVAILABLE:
+        embedding_path = os.path.join(voice_dir, "embedding.npy")
+        if os.path.exists(embedding_path):
+            # Ưu tiên .npy format
+            import numpy as np
+            embedding = np.load(embedding_path)
+            print(f"✅ Loaded embedding from {embedding_path}")
+        elif os.path.exists(os.path.join(voice_dir, "embedding.pth")) and TORCH_AVAILABLE:
+            # Fallback về .pth format nếu không có .npy
+            embedding_path = os.path.join(voice_dir, "embedding.pth")
             embedding = torch.load(embedding_path)
+            print(f"⚠️ Loaded embedding from {embedding_path} (fallback)")
+            
+            # Tự động convert và lưu .npy format để lần sau sử dụng
+            try:
+                if isinstance(embedding, torch.Tensor):
+                    emb_np = embedding.detach().cpu().numpy()
+                else:
+                    emb_np = np.array(embedding)
+                
+                np.save(os.path.join(voice_dir, "embedding.npy"), emb_np)
+                print("✅ Auto-converted and saved embedding.npy for future use")
+            except Exception as convert_error:
+                print(f"⚠️ Failed to auto-convert embedding: {convert_error}")
         else:
-            embedding_path = os.path.join(voice_dir, "embedding.npy")
-            if os.path.exists(embedding_path):
-                import numpy as np
-                embedding = np.load(embedding_path)
+            print(f"❌ No embedding files found in {voice_dir}")
         
         # Load sample audio
         sample_path = os.path.join(voice_dir, "sample.wav")

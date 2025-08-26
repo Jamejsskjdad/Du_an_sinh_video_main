@@ -1,0 +1,10 @@
+{
+  "user_id": "current_user",
+  "voice_id": "voicetest_thu2",
+  "language": "vi",
+  "sample_rate": 48000,
+  "audio_length": 3605504,
+  "model_type": "xtts_v2_api",
+  "created_at": 1756226608.3667743,
+  "sample_audio": "data\\voices\\current_user\\voicetest_thu2\\sample.wav"
+}
